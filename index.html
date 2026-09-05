@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>what's gemma thinking?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700&family=Quicksand:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/d3@7/dist/d3.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Quicksand', sans-serif;
+    margin: 0;
+    background: #FAF6EE;
+    color: #2B2420;
+  }
+  .wrap {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 28px 16px 40px;
+  }
+  h1 {
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 700;
+    font-size: 28px;
+    margin: 0 0 4px;
+  }
+  .sub {
+    font-size: 14px;
+    opacity: 0.65;
+    margin-bottom: 20px;
+    text-align: center;
+    max-width: 380px;
+  }
+  .panel {
+    width: 100%;
+    max-width: 480px;
+    background: #fff;
+    border: 3px solid #2B2420;
+    border-radius: 28px;
+    box-shadow: 6px 6px 0 #2B2420;
+    padding: 20px;
+  }
+  .input-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .input-row input {
+    flex: 1;
+    font-family: 'Baloo 2', sans-serif;
+    font-size: 18px;
+    border: 3px solid #2B2420;
+    border-radius: 999px;
+    padding: 10px 18px;
+    outline: none;
+    background: #FFF9EF;
+  }
+  .input-row button {
+    font-family: 'Baloo 2', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    border: 3px solid #2B2420;
+    border-radius: 999px;
+    padding: 10px 20px;
+    background: #FFC79A;
+    cursor: pointer;
+    box-shadow: 3px 3px 0 #2B2420;
+  }
+  .input-row button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #2B2420; }
+  .chips { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .chip {
+    font-size: 13px;
+    font-weight: 600;
+    border: 2px solid #2B2420;
+    border-radius: 999px;
+    padding: 4px 12px;
+    cursor: pointer;
+    background: #F1EADA;
+  }
+  .chip.active { background: #B7D96B; }
+  .stage {
+    position: relative;
+    height: 300px;
+    border: 3px dashed #2B2420;
+    border-radius: 22px;
+    overflow: hidden;
+    transition: background 0.5s ease;
+  }
+  .blob {
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%;
+    border: 3px solid #2B2420;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 700;
+    line-height: 1.1;
+    padding: 4px;
+    transition: transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.5s ease, height 0.5s ease, margin 0.5s ease;
+  }
+  .slider-row { margin-top: 18px; }
+  .slider-label { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  input[type="range"] { width: 100%; accent-color: #2B2420; }
+  .phase-pill { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; border: 2px solid #2B2420; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef } = React;
+
+const NUM_LAYERS = 26;
+
+const WORD_DATA = {
+  kiwi: {
+    early: [{ label: "kiwi", s: 0.9 }],
+    workspace: [
+      { label: "kiwi", s: 1 }, { label: "fruit", s: 0.62 }, { label: "green", s: 0.55 },
+      { label: "tropical", s: 0.42 }, { label: "bird", s: 0.34 }, { label: "New Zealand", s: 0.38 },
+      { label: "fuzzy skin", s: 0.28 },
+    ],
+    motor: [{ label: "kiwi", s: 1 }],
+  },
+  orange: {
+    early: [{ label: "orange", s: 0.9 }],
+    workspace: [
+      { label: "orange", s: 1 }, { label: "fruit", s: 0.6 }, { label: "citrus", s: 0.58 },
+      { label: "color", s: 0.4 }, { label: "juice", s: 0.36 }, { label: "round", s: 0.3 },
+    ],
+    motor: [{ label: "orange", s: 1 }],
+  },
+  spider: {
+    early: [{ label: "spider", s: 0.85 }],
+    workspace: [
+      { label: "spider", s: 1 }, { label: "web", s: 0.52 }, { label: "eight legs", s: 0.58 },
+      { label: "arachnid", s: 0.4 }, { label: "creepy", s: 0.32 }, { label: "spin", s: 0.26 },
+    ],
+    motor: [{ label: "spider", s: 1 }],
+  },
+};
+
+const PALETTE = ["#B7D96B", "#FFC79A", "#8FCBEB", "#FF8B7B", "#FFE066", "#C9A6FF", "#9FE0C6"];
+
+function phaseForLayer(layer) {
+  const t = layer / (NUM_LAYERS - 1);
+  if (t < 0.33) return { name: "sensory", t };
+  if (t < 0.88) return { name: "workspace", t };
+  return { name: "motor", t };
+}
+
+function bgForLayer(layer) {
+  const t = layer / (NUM_LAYERS - 1);
+  const cool = [235, 244, 240], mid = [255, 241, 224], hot = [255, 223, 199];
+  const lerp = (a, b, f) => a.map((v, i) => Math.round(v + (b[i] - v) * f));
+  const c = t < 0.5 ? lerp(cool, mid, t / 0.5) : lerp(mid, hot, (t - 0.5) / 0.5);
+  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+}
+
+function wordScale(layer) {
+  const { name, t } = phaseForLayer(layer);
+  if (name === "sensory") return t / 0.33;
+  if (name === "motor") return 1 - (t - 0.88) / 0.12;
+  const wt = (t - 0.33) / 0.55;
+  return Math.sin(wt * Math.PI) * 0.5 + 0.5;
+}
+
+function Blob({ x, y, r, color, label, delay }) {
+  return (
+    <div className="blob" style={{
+      transform: `translate(${x}px, ${y}px)`,
+      width: r * 2, height: r * 2, marginLeft: -r, marginTop: -r,
+      background: color, transitionDelay: `${delay}ms`,
+    }}>
+      <span style={{ fontSize: Math.max(11, r * 0.32) }}>{label}</span>
+    </div>
+  );
+}
+
+function App() {
+  const [word, setWord] = useState("kiwi");
+  const [inputVal, setInputVal] = useState("kiwi");
+  const [layer, setLayer] = useState(14);
+  const [nodes, setNodes] = useState([]);
+  const stageRef = useRef(null);
+
+  const phase = phaseForLayer(layer);
+  const bucket = phase.name === "sensory" ? "early" : phase.name === "motor" ? "motor" : "workspace";
+
+  const rawConcepts = useMemo(() => {
+    const data = WORD_DATA[word] || WORD_DATA.kiwi;
+    return data[bucket] || data.early;
+  }, [word, bucket]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const W = stage.clientWidth, H = stage.clientHeight;
+    const scale = wordScale(layer);
+
+    const sim = d3.forceSimulation(
+      rawConcepts.map((c, i) => ({
+        ...c,
+        x: W / 2 + (Math.random() - 0.5) * 40,
+        y: H / 2 + (Math.random() - 0.5) * 40,
+        r: 26 + c.s * 46 * Math.max(0.35, scale),
+        color: PALETTE[i % PALETTE.length],
+      }))
+    )
+      .force("charge", d3.forceManyBody().strength(6))
+      .force("center", d3.forceCenter(W / 2, H / 2))
+      .force("collide", d3.forceCollide((d) => d.r + 6))
+      .stop();
+
+    for (let i = 0; i < 250; i++) sim.tick();
+    setNodes(sim.nodes());
+  }, [rawConcepts, layer]);
+
+  const phaseColors = { sensory: "#8FCBEB", workspace: "#FF8B7B", motor: "#FFE066" };
+
+  return (
+    <div className="wrap">
+      <h1>what's gemma thinking?</h1>
+      <p className="sub">Placeholder data — the shape and motion, before real J-lens output gets wired in.</p>
+      <div className="panel">
+        <div className="input-row">
+          <input
+            value={inputVal}
+            onChange={(e) => setInputVal(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const w = inputVal.trim().toLowerCase();
+                if (WORD_DATA[w]) setWord(w);
+              }
+            }}
+            placeholder="type a word…"
+          />
+          <button onClick={() => {
+            const w = inputVal.trim().toLowerCase();
+            if (WORD_DATA[w]) setWord(w);
+          }}>peek 🥝</button>
+        </div>
+        <div className="chips">
+          {Object.keys(WORD_DATA).map((w) => (
+            <span key={w} className={`chip ${w === word ? "active" : ""}`}
+              onClick={() => { setWord(w); setInputVal(w); }}>{w}</span>
+          ))}
+        </div>
+        <div className="stage" ref={stageRef} style={{ background: bgForLayer(layer) }}>
+          {nodes.map((n, i) => (
+            <Blob key={n.label} x={n.x} y={n.y} r={n.r} color={n.color} label={n.label} delay={i * 40} />
+          ))}
+        </div>
+        <div className="slider-row">
+          <div className="slider-label">
+            <span>layer {layer + 1} / {NUM_LAYERS}</span>
+            <span className="phase-pill" style={{ background: phaseColors[phase.name] }}>{phase.name}</span>
+          </div>
+          <input type="range" min={0} max={NUM_LAYERS - 1} value={layer}
+            onChange={(e) => setLayer(Number(e.target.value))} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
